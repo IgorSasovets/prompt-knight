@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { logDetections, logOperationalEvents } from "../src/feedback-logger";
+import { logDetections, logFeedback, logOperationalEvents } from "../src/feedback-logger";
 import { Config, Detection } from "../src/types";
+import { Tier2Evidence } from "../src/tier2-ollama";
 
 function mkTmp(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -125,4 +126,53 @@ test("logOperationalEvents records diagnostic events distinct from detections", 
   const entry = JSON.parse(fs.readFileSync(logPath, "utf8").trim());
   assert.equal(entry.event, "pattern_load_error");
   assert.equal(entry.message, "skipped pattern X");
+});
+
+function baseFeedbackConfig(overrides: Partial<Config["feedback"]> = {}): Config["feedback"] {
+  return {
+    enabled: true,
+    suggestPatterns: true,
+    autoExtendPatterns: false,
+    minHitsForSuggestion: 3,
+    evidencePreviewChars: 64,
+    ...overrides,
+  };
+}
+
+const evidence: Tier2Evidence = { category: "email", text: "someone@example.com", confidence: 0.9 };
+
+test("logFeedback writes to a separate feedback.jsonl, truncated to evidencePreviewChars", () => {
+  const homedir = mkTmp("promptknight-log-home-");
+  const userConfigDir = path.join(homedir, ".prompt-knight");
+  logFeedback(baseLoggingConfig(), baseFeedbackConfig({ evidencePreviewChars: 8 }), [evidence], homedir, userConfigDir);
+
+  const feedbackPath = path.join(userConfigDir, "logs", "feedback.jsonl");
+  const entry = JSON.parse(fs.readFileSync(feedbackPath, "utf8").trim());
+  assert.equal(entry.category, "email");
+  assert.equal(entry.evidencePreview, "someone@***");
+  assert.ok(!fs.existsSync(path.join(userConfigDir, "logs", "detections.jsonl")));
+});
+
+test("logFeedback is a no-op when feedback.enabled is false", () => {
+  const homedir = mkTmp("promptknight-log-home-");
+  const userConfigDir = path.join(homedir, ".prompt-knight");
+  logFeedback(baseLoggingConfig(), baseFeedbackConfig({ enabled: false }), [evidence], homedir, userConfigDir);
+
+  const feedbackPath = path.join(userConfigDir, "logs", "feedback.jsonl");
+  assert.equal(fs.existsSync(feedbackPath), false);
+});
+
+test("logFeedback with evidencePreviewChars: 0 writes nothing for that entry", () => {
+  const homedir = mkTmp("promptknight-log-home-");
+  const userConfigDir = path.join(homedir, ".prompt-knight");
+  const result = logFeedback(
+    baseLoggingConfig(),
+    baseFeedbackConfig({ evidencePreviewChars: 0 }),
+    [evidence],
+    homedir,
+    userConfigDir
+  );
+  assert.deepEqual(result, {});
+  const feedbackPath = path.join(userConfigDir, "logs", "feedback.jsonl");
+  assert.equal(fs.existsSync(feedbackPath), false);
 });

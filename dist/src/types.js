@@ -50,5 +50,11 @@ exports.SECURE_DEFAULTS = {
         enabled: false,
         suggestPatterns: true,
         autoExtendPatterns: false,
+        minHitsForSuggestion: 3,
+        // Deliberately more generous than logging.previewChars (default 4): that value is
+        // tuned for human-readable audit-log debugging context, not for deriving a
+        // multi-character structural regex. Still bounded/truncated, never the raw value,
+        // and already capped upstream at 200 chars by tier2-ollama.ts's evidence field.
+        evidencePreviewChars: 64,
     },
 };

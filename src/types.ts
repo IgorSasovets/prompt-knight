@@ -10,7 +10,7 @@ export interface PatternDefinition {
 
 export interface Detection {
   category: string;
-  source: "tier1" | "custom" | "gitleaks";
+  source: "tier1" | "custom" | "gitleaks" | "tier2";
   patternId: string;
   index: number;
   length: number;
@@ -67,6 +67,8 @@ export interface FeedbackConfig {
   enabled: boolean;
   suggestPatterns: boolean;
   autoExtendPatterns: boolean;
+  minHitsForSuggestion: number;
+  evidencePreviewChars: number;
 }
 
 export interface Config {
@@ -128,6 +130,12 @@ export const SECURE_DEFAULTS: Config = {
     enabled: false,
     suggestPatterns: true,
     autoExtendPatterns: false,
+    minHitsForSuggestion: 3,
+    // Deliberately more generous than logging.previewChars (default 4): that value is
+    // tuned for human-readable audit-log debugging context, not for deriving a
+    // multi-character structural regex. Still bounded/truncated, never the raw value,
+    // and already capped upstream at 200 chars by tier2-ollama.ts's evidence field.
+    evidencePreviewChars: 64,
   },
 };
 

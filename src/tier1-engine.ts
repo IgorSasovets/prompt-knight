@@ -218,10 +218,11 @@ export interface ScanOptions {
 
 export interface ScanResult {
   detections: Detection[];
+  suppressed: Detection[];
   timeouts: string[];
 }
 
-function truncateToByteLimit(text: string, maxBytes: number): string {
+export function truncateToByteLimit(text: string, maxBytes: number): string {
   if (Buffer.byteLength(text, "utf8") <= maxBytes) return text;
   // Binary-search the largest prefix (in UTF-16 code units) whose UTF-8 byte length
   // stays within the bound, avoiding a split multi-byte character at the boundary.
@@ -258,7 +259,8 @@ export async function scan(text: string, patterns: CompiledPattern[], options: S
   }
 
   const filtered = detections.filter((d) => !isAllowlisted(d.matchedText, options.allowlist));
+  const suppressed = detections.filter((d) => isAllowlisted(d.matchedText, options.allowlist));
   const deduped = dedupeDetections(filtered);
 
-  return { detections: deduped, timeouts };
+  return { detections: deduped, suppressed, timeouts };
 }

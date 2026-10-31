@@ -37,6 +37,7 @@ exports.loadPatterns = loadPatterns;
 exports.isAllowlisted = isAllowlisted;
 exports.dedupeDetections = dedupeDetections;
 exports.shutdownPatternWorker = shutdownPatternWorker;
+exports.truncateToByteLimit = truncateToByteLimit;
 exports.scan = scan;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
@@ -246,6 +247,7 @@ async function scan(text, patterns, options) {
         }
     }
     const filtered = detections.filter((d) => !isAllowlisted(d.matchedText, options.allowlist));
+    const suppressed = detections.filter((d) => isAllowlisted(d.matchedText, options.allowlist));
     const deduped = dedupeDetections(filtered);
-    return { detections: deduped, timeouts };
+    return { detections: deduped, suppressed, timeouts };
 }

@@ -42,6 +42,7 @@ const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const child_process_1 = require("child_process");
 const config_loader_1 = require("./config-loader");
+const tier1_engine_1 = require("./tier1-engine");
 const WINDOWS_EXECUTABLE_SUFFIXES = ["", ".exe", ".cmd", ".bat"];
 /**
  * Node has no built-in `which`. A bare command name (the default, "gitleaks") is
@@ -143,8 +144,9 @@ function mapFindingsToDetections(findings, originalText) {
  * `gitleaks dir`, which does support --report-format/--report-path. The temp directory
  * is always removed afterward, even on failure.
  */
-function scanWithGitleaks(text, config, allowedRoots) {
+function scanWithGitleaks(text, config, allowedRoots, maxPromptBytes) {
     const errors = [];
+    const bounded = (0, tier1_engine_1.truncateToByteLimit)(text, maxPromptBytes);
     const verify = verifyBinary(config);
     if (!verify.ok || !verify.resolvedPath) {
         errors.push(verify.reason ?? "gitleaks verification failed");
@@ -162,7 +164,7 @@ function scanWithGitleaks(text, config, allowedRoots) {
         tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "promptknight-gitleaks-"));
         const targetFile = path.join(tmpDir, "prompt.txt");
         const reportFile = path.join(tmpDir, "report.json");
-        fs.writeFileSync(targetFile, text, { mode: 0o600 });
+        fs.writeFileSync(targetFile, bounded, { mode: 0o600 });
         const args = ["dir", targetFile, "--report-format", "json", "--report-path", reportFile, "--exit-code", "0", "--no-color"];
         if (configArgPath) {
             args.push("--config", configArgPath);
@@ -194,7 +196,7 @@ function scanWithGitleaks(text, config, allowedRoots) {
             errors.push(`failed to parse gitleaks report: ${err.message}`);
             return { detections: [], errors };
         }
-        return { detections: mapFindingsToDetections(findings, text), errors };
+        return { detections: mapFindingsToDetections(findings, bounded), errors };
     }
     catch (err) {
         errors.push(`gitleaks scan failed: ${err.message}`);

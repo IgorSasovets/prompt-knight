@@ -5,6 +5,7 @@ import * as path from "path";
 import { spawnSync } from "child_process";
 import { Detection, GitleaksConfig } from "./types";
 import { resolveSandboxedPath } from "./config-loader";
+import { truncateToByteLimit } from "./tier1-engine";
 
 export interface GitleaksScanResult {
   detections: Detection[];
@@ -135,8 +136,14 @@ function mapFindingsToDetections(findings: GitleaksFinding[], originalText: stri
  * `gitleaks dir`, which does support --report-format/--report-path. The temp directory
  * is always removed afterward, even on failure.
  */
-export function scanWithGitleaks(text: string, config: GitleaksConfig, allowedRoots: string[]): GitleaksScanResult {
+export function scanWithGitleaks(
+  text: string,
+  config: GitleaksConfig,
+  allowedRoots: string[],
+  maxPromptBytes: number
+): GitleaksScanResult {
   const errors: string[] = [];
+  const bounded = truncateToByteLimit(text, maxPromptBytes);
   const verify = verifyBinary(config);
   if (!verify.ok || !verify.resolvedPath) {
     errors.push(verify.reason ?? "gitleaks verification failed");
@@ -156,7 +163,7 @@ export function scanWithGitleaks(text: string, config: GitleaksConfig, allowedRo
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "promptknight-gitleaks-"));
     const targetFile = path.join(tmpDir, "prompt.txt");
     const reportFile = path.join(tmpDir, "report.json");
-    fs.writeFileSync(targetFile, text, { mode: 0o600 });
+    fs.writeFileSync(targetFile, bounded, { mode: 0o600 });
 
     const args = ["dir", targetFile, "--report-format", "json", "--report-path", reportFile, "--exit-code", "0", "--no-color"];
     if (configArgPath) {
@@ -192,7 +199,7 @@ export function scanWithGitleaks(text: string, config: GitleaksConfig, allowedRo
       return { detections: [], errors };
     }
 
-    return { detections: mapFindingsToDetections(findings, text), errors };
+    return { detections: mapFindingsToDetections(findings, bounded), errors };
   } catch (err) {
     errors.push(`gitleaks scan failed: ${(err as Error).message}`);
     return { detections: [], errors };

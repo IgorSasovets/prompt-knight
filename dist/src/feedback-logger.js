@@ -34,19 +34,23 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.logDetections = logDetections;
+exports.logFeedback = logFeedback;
 exports.logOperationalEvents = logOperationalEvents;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const validation_1 = require("./validation");
 const config_loader_1 = require("./config-loader");
-function resolveLogPath(loggingConfig, homedir, userConfigDir, sandboxErrors) {
+const FEEDBACK_LOG_FILE = "feedback.jsonl";
+function resolveLogDir(loggingConfig, homedir, userConfigDir, sandboxErrors) {
     const expandedDir = (0, validation_1.expandHome)(loggingConfig.logDir, homedir);
     const resolvedDir = (0, config_loader_1.resolveSandboxedPath)(expandedDir, homedir, [userConfigDir], "logging.logDir", sandboxErrors);
-    const logDir = resolvedDir ?? path.join(userConfigDir, "logs");
     if (!resolvedDir) {
         sandboxErrors.push(`logging.logDir "${loggingConfig.logDir}" resolves outside ~/.prompt-knight/; using the default log directory instead.`);
     }
-    return path.join(logDir, loggingConfig.logFile);
+    return resolvedDir ?? path.join(userConfigDir, "logs");
+}
+function resolveLogPath(loggingConfig, homedir, userConfigDir, sandboxErrors) {
+    return path.join(resolveLogDir(loggingConfig, homedir, userConfigDir, sandboxErrors), loggingConfig.logFile);
 }
 /**
  * Appends pre-built JSON lines to the audit log. Creates the log directory with 0700
@@ -99,6 +103,34 @@ function logDetections(loggingConfig, mode, detections, homedir, userConfigDir) 
         }
         return JSON.stringify(entry);
     });
+    const writeResult = appendLines(logPath, lines);
+    const warnings = [...sandboxErrors, ...(writeResult.warning ? [writeResult.warning] : [])];
+    return warnings.length > 0 ? { warning: warnings.join(" ") } : {};
+}
+/**
+ * Appends Tier 2 evidence excerpts to a **separate** opt-in log (`feedback.jsonl`,
+ * not `detections.jsonl`) for `review-patterns.ts` to mine (REQ-SI-01). The excerpt is
+ * truncated via `redactPreview()`, using `feedback.evidencePreviewChars` (default 64)
+ * rather than the much shorter `logging.previewChars` (default 4) — that value is
+ * tuned for human-readable audit-log debugging, not for deriving a structural regex —
+ * but it is still bounded/truncated, never the raw value. Only ever called when
+ * `feedback.enabled` is true; this function also checks it defensively itself.
+ */
+function logFeedback(loggingConfig, feedbackConfig, evidence, homedir, userConfigDir) {
+    if (!feedbackConfig.enabled || evidence.length === 0)
+        return {};
+    const sandboxErrors = [];
+    const logDir = resolveLogDir(loggingConfig, homedir, userConfigDir, sandboxErrors);
+    const logPath = path.join(logDir, FEEDBACK_LOG_FILE);
+    const timestamp = new Date().toISOString();
+    const lines = evidence
+        .map((e) => {
+        const preview = (0, validation_1.redactPreview)(e.text, feedbackConfig.evidencePreviewChars);
+        if (preview === undefined)
+            return null;
+        return JSON.stringify({ timestamp, category: e.category, confidence: e.confidence, evidencePreview: preview });
+    })
+        .filter((line) => line !== null);
     const writeResult = appendLines(logPath, lines);
     const warnings = [...sandboxErrors, ...(writeResult.warning ? [writeResult.warning] : [])];
     return warnings.length > 0 ? { warning: warnings.join(" ") } : {};

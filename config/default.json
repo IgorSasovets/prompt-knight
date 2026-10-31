@@ -44,6 +44,8 @@
   "feedback": {
     "enabled": false,
     "suggestPatterns": true,
-    "autoExtendPatterns": false
+    "autoExtendPatterns": false,
+    "minHitsForSuggestion": 3,
+    "evidencePreviewChars": 64
   }
 }

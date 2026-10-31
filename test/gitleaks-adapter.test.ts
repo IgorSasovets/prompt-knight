@@ -111,7 +111,7 @@ test("verifyBinary: fails when the binary cannot be found at all", () => {
 
 test("scanWithGitleaks: gracefully degrades (no throw, empty detections) when unverified", () => {
   const config = baseGitleaksConfig({ binaryPath: "/no/such/path/gitleaks" });
-  const result = scanWithGitleaks("some prompt text", config, [process.cwd()]);
+  const result = scanWithGitleaks("some prompt text", config, [process.cwd()], 1_000_000);
   assert.deepEqual(result.detections, []);
   assert.ok(result.errors.length > 0);
 });
@@ -127,9 +127,12 @@ test(
     // this test can't know in advance, so it only asserts the no-throw / cleanup
     // contract rather than a specific detection.
     const config = baseGitleaksConfig({ binaryPath: realGitleaksPath! });
-    const result = scanWithGitleaks("hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXXXXXXXXXX", config, [
-      process.cwd(),
-    ]);
+    const result = scanWithGitleaks(
+      "hooks.slack.com/services/T000/B000/XXXXXXXXXXXXXXXXXXXXXXXX",
+      config,
+      [process.cwd()],
+      1_000_000
+    );
     assert.ok(Array.isArray(result.detections));
     assert.ok(Array.isArray(result.errors));
   }

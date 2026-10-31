@@ -41,7 +41,9 @@ const config_loader_1 = require("./config-loader");
 const enforcement_1 = require("./enforcement");
 const feedback_logger_1 = require("./feedback-logger");
 const gitleaks_adapter_1 = require("./gitleaks-adapter");
+const pattern_stats_1 = require("./pattern-stats");
 const tier1_engine_1 = require("./tier1-engine");
+const tier2_ollama_1 = require("./tier2-ollama");
 const validation_1 = require("./validation");
 function readStdin() {
     try {
@@ -99,14 +101,51 @@ async function main() {
             workerScriptPath,
         });
         let combinedDetections = result.detections;
+        const allMatched = [...result.detections];
+        const allSuppressed = [...result.suppressed];
+        let tier2Evidence = [];
         if (config.gitleaks.enabled) {
-            const gitleaksResult = (0, gitleaks_adapter_1.scanWithGitleaks)(prompt, config.gitleaks, allowedRoots);
+            const gitleaksResult = (0, gitleaks_adapter_1.scanWithGitleaks)(prompt, config.gitleaks, allowedRoots, config.maxPromptBytes);
             if (gitleaksResult.errors.length > 0) {
                 (0, feedback_logger_1.logOperationalEvents)(config.logging, "gitleaks_error", gitleaksResult.errors, homedir, userConfigDir);
             }
             const allowlistFiltered = gitleaksResult.detections.filter((d) => !(0, tier1_engine_1.isAllowlisted)(d.matchedText, config.tier1.allowlist));
+            const allowlistSuppressed = gitleaksResult.detections.filter((d) => (0, tier1_engine_1.isAllowlisted)(d.matchedText, config.tier1.allowlist));
+            allMatched.push(...allowlistFiltered);
+            allSuppressed.push(...allowlistSuppressed);
             // Tier1 first so its more specific category name wins on a duplicate secret value.
-            combinedDetections = (0, tier1_engine_1.dedupeDetections)([...result.detections, ...allowlistFiltered]);
+            combinedDetections = (0, tier1_engine_1.dedupeDetections)([...combinedDetections, ...allowlistFiltered]);
+        }
+        let tier2RequestFailed = false;
+        if (config.tier2.enabled) {
+            if (!(0, tier2_ollama_1.isLocalHostname)(config.tier2.ollamaUrl) && config.tier2.allowNonLocal) {
+                (0, feedback_logger_1.logOperationalEvents)(config.logging, "tier2_nonlocal_warning", [`tier2.ollamaUrl "${config.tier2.ollamaUrl}" is non-local and allowNonLocal is true — prompt content is leaving this host.`], homedir, userConfigDir);
+            }
+            const tier2Outcome = await (0, tier2_ollama_1.callOllama)(prompt, config.tier2, config.maxPromptBytes);
+            if (tier2Outcome.kind === "skipped") {
+                (0, feedback_logger_1.logOperationalEvents)(config.logging, "tier2_skipped", [tier2Outcome.reason], homedir, userConfigDir);
+            }
+            else if (tier2Outcome.kind === "failed") {
+                tier2RequestFailed = true;
+                (0, feedback_logger_1.logOperationalEvents)(config.logging, "tier2_failed", [tier2Outcome.reason], homedir, userConfigDir);
+            }
+            else {
+                tier2Evidence = tier2Outcome.evidence;
+                if (tier2Outcome.detections.length > 0) {
+                    allMatched.push(...tier2Outcome.detections);
+                    // Concatenated last: Tier 2 can only add detections, never remove tier1/gitleaks
+                    // ones (D9, REQ-T2-03) — escalate-only falls out of this ordering for free.
+                    combinedDetections = (0, tier1_engine_1.dedupeDetections)([...combinedDetections, ...tier2Outcome.detections]);
+                }
+            }
+        }
+        if (config.feedback.enabled) {
+            const statsWarning = (0, pattern_stats_1.recordPatternActivity)(allMatched, allSuppressed, userConfigDir).warning;
+            if (statsWarning)
+                process.stderr.write(`${statsWarning}\n`);
+            const feedbackWarning = (0, feedback_logger_1.logFeedback)(config.logging, config.feedback, tier2Evidence, homedir, userConfigDir).warning;
+            if (feedbackWarning)
+                process.stderr.write(`${feedbackWarning}\n`);
         }
         if (configErrors.length > 0) {
             (0, feedback_logger_1.logOperationalEvents)(config.logging, "config_error", configErrors, homedir, userConfigDir);
@@ -121,16 +160,17 @@ async function main() {
         if (logResult.warning) {
             process.stderr.write(`${logResult.warning}\n`);
         }
-        const decision = (0, enforcement_1.decide)(config.mode, combinedDetections, false);
-        if (decision === "block") {
-            const categories = combinedDetections.map((d) => d.category);
-            const previews = combinedDetections.map((d) => config.logging.redactValues ? (0, validation_1.redactPreview)(d.matchedText, config.logging.previewChars) : undefined);
-            emitBlock(summarizeDetections(config.mode, categories, previews));
-        }
-        else if (decision === "warn") {
-            const categories = combinedDetections.map((d) => d.category);
-            const previews = combinedDetections.map((d) => config.logging.redactValues ? (0, validation_1.redactPreview)(d.matchedText, config.logging.previewChars) : undefined);
-            emitWarn(summarizeDetections(config.mode, categories, previews));
+        const decision = (0, enforcement_1.decide)(config.mode, combinedDetections, tier2RequestFailed);
+        if (decision === "block" || decision === "warn") {
+            const message = combinedDetections.length === 0
+                ? "PromptKnight could not complete semantic analysis (Tier 2) for this prompt, and the configured mode fails closed when a check can't run."
+                : summarizeDetections(config.mode, combinedDetections.map((d) => d.category), combinedDetections.map((d) => config.logging.redactValues ? (0, validation_1.redactPreview)(d.matchedText, config.logging.previewChars) : undefined));
+            if (decision === "block") {
+                emitBlock(message);
+            }
+            else {
+                emitWarn(message);
+            }
         }
         else {
             emitAllow();
