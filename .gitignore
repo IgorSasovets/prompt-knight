@@ -1,0 +1,24 @@
+node_modules/
+*.log
+npm-debug.log*
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Local secrets / env overrides — never commit, especially in a DLP tool's own repo
+.env
+.env.*
+
+# Note: dist/ is intentionally NOT ignored — REQ-DIST-03 requires compiled JS to ship
+# so installs need no build step. Compiled tests aren't part of that shipped plugin,
+# so they're excluded even though `npm test` still builds them locally.
+/dist/test/
