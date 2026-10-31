@@ -22,7 +22,8 @@
     "binaryPath": "gitleaks",
     "pinnedVersion": "8.x.y",
     "expectedSha256": "",
-    "configPath": null
+    "configPath": null,
+    "timeoutMs": 5000
   },
   "tier2": {
     "enabled": false,

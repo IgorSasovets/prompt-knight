@@ -40,6 +40,7 @@ const path = __importStar(require("path"));
 const config_loader_1 = require("./config-loader");
 const enforcement_1 = require("./enforcement");
 const feedback_logger_1 = require("./feedback-logger");
+const gitleaks_adapter_1 = require("./gitleaks-adapter");
 const tier1_engine_1 = require("./tier1-engine");
 const validation_1 = require("./validation");
 function readStdin() {
@@ -97,6 +98,16 @@ async function main() {
             allowlist: config.tier1.allowlist,
             workerScriptPath,
         });
+        let combinedDetections = result.detections;
+        if (config.gitleaks.enabled) {
+            const gitleaksResult = (0, gitleaks_adapter_1.scanWithGitleaks)(prompt, config.gitleaks, allowedRoots);
+            if (gitleaksResult.errors.length > 0) {
+                (0, feedback_logger_1.logOperationalEvents)(config.logging, "gitleaks_error", gitleaksResult.errors, homedir, userConfigDir);
+            }
+            const allowlistFiltered = gitleaksResult.detections.filter((d) => !(0, tier1_engine_1.isAllowlisted)(d.matchedText, config.tier1.allowlist));
+            // Tier1 first so its more specific category name wins on a duplicate secret value.
+            combinedDetections = (0, tier1_engine_1.dedupeDetections)([...result.detections, ...allowlistFiltered]);
+        }
         if (configErrors.length > 0) {
             (0, feedback_logger_1.logOperationalEvents)(config.logging, "config_error", configErrors, homedir, userConfigDir);
         }
@@ -106,19 +117,19 @@ async function main() {
         if (result.timeouts.length > 0) {
             (0, feedback_logger_1.logOperationalEvents)(config.logging, "pattern_timeout", result.timeouts, homedir, userConfigDir);
         }
-        const logResult = (0, feedback_logger_1.logDetections)(config.logging, config.mode, result.detections, homedir, userConfigDir);
+        const logResult = (0, feedback_logger_1.logDetections)(config.logging, config.mode, combinedDetections, homedir, userConfigDir);
         if (logResult.warning) {
             process.stderr.write(`${logResult.warning}\n`);
         }
-        const decision = (0, enforcement_1.decide)(config.mode, result.detections, false);
+        const decision = (0, enforcement_1.decide)(config.mode, combinedDetections, false);
         if (decision === "block") {
-            const categories = result.detections.map((d) => d.category);
-            const previews = result.detections.map((d) => config.logging.redactValues ? (0, validation_1.redactPreview)(d.matchedText, config.logging.previewChars) : undefined);
+            const categories = combinedDetections.map((d) => d.category);
+            const previews = combinedDetections.map((d) => config.logging.redactValues ? (0, validation_1.redactPreview)(d.matchedText, config.logging.previewChars) : undefined);
             emitBlock(summarizeDetections(config.mode, categories, previews));
         }
         else if (decision === "warn") {
-            const categories = result.detections.map((d) => d.category);
-            const previews = result.detections.map((d) => config.logging.redactValues ? (0, validation_1.redactPreview)(d.matchedText, config.logging.previewChars) : undefined);
+            const categories = combinedDetections.map((d) => d.category);
+            const previews = combinedDetections.map((d) => config.logging.redactValues ? (0, validation_1.redactPreview)(d.matchedText, config.logging.previewChars) : undefined);
             emitWarn(summarizeDetections(config.mode, categories, previews));
         }
         else {

@@ -5,8 +5,9 @@ import * as path from "path";
 import { loadConfig } from "./config-loader";
 import { decide } from "./enforcement";
 import { logDetections, logOperationalEvents } from "./feedback-logger";
-import { loadPatterns, scan, shutdownPatternWorker } from "./tier1-engine";
-import { Mode } from "./types";
+import { scanWithGitleaks } from "./gitleaks-adapter";
+import { dedupeDetections, isAllowlisted, loadPatterns, scan, shutdownPatternWorker } from "./tier1-engine";
+import { Detection, Mode } from "./types";
 import { redactPreview, sanitizeErrorForUser } from "./validation";
 
 interface HookPayload {
@@ -79,6 +80,19 @@ async function main(): Promise<void> {
       workerScriptPath,
     });
 
+    let combinedDetections: Detection[] = result.detections;
+    if (config.gitleaks.enabled) {
+      const gitleaksResult = scanWithGitleaks(prompt, config.gitleaks, allowedRoots);
+      if (gitleaksResult.errors.length > 0) {
+        logOperationalEvents(config.logging, "gitleaks_error", gitleaksResult.errors, homedir, userConfigDir);
+      }
+      const allowlistFiltered = gitleaksResult.detections.filter(
+        (d) => !isAllowlisted(d.matchedText, config.tier1.allowlist)
+      );
+      // Tier1 first so its more specific category name wins on a duplicate secret value.
+      combinedDetections = dedupeDetections([...result.detections, ...allowlistFiltered]);
+    }
+
     if (configErrors.length > 0) {
       logOperationalEvents(config.logging, "config_error", configErrors, homedir, userConfigDir);
     }
@@ -89,22 +103,22 @@ async function main(): Promise<void> {
       logOperationalEvents(config.logging, "pattern_timeout", result.timeouts, homedir, userConfigDir);
     }
 
-    const logResult = logDetections(config.logging, config.mode, result.detections, homedir, userConfigDir);
+    const logResult = logDetections(config.logging, config.mode, combinedDetections, homedir, userConfigDir);
     if (logResult.warning) {
       process.stderr.write(`${logResult.warning}\n`);
     }
 
-    const decision = decide(config.mode, result.detections, false);
+    const decision = decide(config.mode, combinedDetections, false);
 
     if (decision === "block") {
-      const categories = result.detections.map((d) => d.category);
-      const previews = result.detections.map((d) =>
+      const categories = combinedDetections.map((d) => d.category);
+      const previews = combinedDetections.map((d) =>
         config.logging.redactValues ? redactPreview(d.matchedText, config.logging.previewChars) : undefined
       );
       emitBlock(summarizeDetections(config.mode, categories, previews));
     } else if (decision === "warn") {
-      const categories = result.detections.map((d) => d.category);
-      const previews = result.detections.map((d) =>
+      const categories = combinedDetections.map((d) => d.category);
+      const previews = combinedDetections.map((d) =>
         config.logging.redactValues ? redactPreview(d.matchedText, config.logging.previewChars) : undefined
       );
       emitWarn(summarizeDetections(config.mode, categories, previews));

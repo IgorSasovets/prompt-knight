@@ -91,8 +91,27 @@ export function loadPatterns(
   return { patterns, loadErrors };
 }
 
-function isAllowlisted(matchedText: string, allowlist: string[]): boolean {
+export function isAllowlisted(matchedText: string, allowlist: string[]): boolean {
   return allowlist.some((entry) => matchedText.includes(entry));
+}
+
+/**
+ * Collapses detections that report the identical matched secret value, regardless of
+ * which detector found it (REQ-GL-05). Earlier entries win, so callers that want
+ * tier1's more specific category name to take priority over gitleaks' should
+ * concatenate tier1 detections first.
+ */
+export function dedupeDetections(detections: Detection[]): Detection[] {
+  const seenByValue = new Set<string>();
+  const seenByLocation = new Set<string>();
+  return detections.filter((d) => {
+    if (seenByValue.has(d.matchedText)) return false;
+    const locationKey = `${d.category}:${d.index}:${d.length}`;
+    if (seenByLocation.has(locationKey)) return false;
+    seenByValue.add(d.matchedText);
+    seenByLocation.add(locationKey);
+    return true;
+  });
 }
 
 function runTrusted(pattern: CompiledPattern, text: string): Detection[] {
@@ -239,15 +258,7 @@ export async function scan(text: string, patterns: CompiledPattern[], options: S
   }
 
   const filtered = detections.filter((d) => !isAllowlisted(d.matchedText, options.allowlist));
-
-  // Deduplicate overlapping detections at the same location+category.
-  const seen = new Set<string>();
-  const deduped = filtered.filter((d) => {
-    const key = `${d.category}:${d.index}:${d.length}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const deduped = dedupeDetections(filtered);
 
   return { detections: deduped, timeouts };
 }

@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { loadPatterns, scan, shutdownPatternWorker } from "../src/tier1-engine";
-import { Tier1Config } from "../src/types";
+import { dedupeDetections, loadPatterns, scan, shutdownPatternWorker } from "../src/tier1-engine";
+import { Detection, Tier1Config } from "../src/types";
 
 const pluginRoot = path.join(__dirname, "..", "..");
 const workerScriptPath = path.join(__dirname, "..", "src", "pattern-worker.js");
@@ -185,4 +185,23 @@ test("a custom pattern that exceeds the time budget is aborted and skipped", asy
   assert.ok(Array.isArray(result.detections));
   shutdownPatternWorker();
   fs.rmSync(tmpDir, { recursive: true, force: true });
+});
+
+test("dedupeDetections collapses the same secret value reported by different sources", () => {
+  const detections: Detection[] = [
+    { category: "aws_keys", source: "tier1", patternId: "aws_keys", index: 10, length: 20, matchedText: "AKIAEXAMPLEEXAMPLE12" },
+    { category: "generic-aws-key", source: "gitleaks", patternId: "gitleaks:generic-aws-key", index: 10, length: 20, matchedText: "AKIAEXAMPLEEXAMPLE12" },
+  ];
+  const deduped = dedupeDetections(detections);
+  assert.equal(deduped.length, 1);
+  assert.equal(deduped[0]!.category, "aws_keys"); // tier1 entry wins since it comes first
+});
+
+test("dedupeDetections keeps distinct secret values from different sources", () => {
+  const detections: Detection[] = [
+    { category: "aws_keys", source: "tier1", patternId: "aws_keys", index: 0, length: 20, matchedText: "AKIAEXAMPLEEXAMPLE12" },
+    { category: "slack-webhook-url", source: "gitleaks", patternId: "gitleaks:slack-webhook-url", index: 30, length: 40, matchedText: "https://hooks.slack.com/services/T0/B0/X0" },
+  ];
+  const deduped = dedupeDetections(detections);
+  assert.equal(deduped.length, 2);
 });

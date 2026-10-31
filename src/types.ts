@@ -10,7 +10,7 @@ export interface PatternDefinition {
 
 export interface Detection {
   category: string;
-  source: "tier1" | "custom";
+  source: "tier1" | "custom" | "gitleaks";
   patternId: string;
   index: number;
   length: number;
@@ -42,6 +42,7 @@ export interface GitleaksConfig {
   pinnedVersion: string;
   expectedSha256: string;
   configPath: string | null;
+  timeoutMs: number;
 }
 
 export interface Tier2Config {
@@ -105,6 +106,7 @@ export const SECURE_DEFAULTS: Config = {
     pinnedVersion: "8.x.y",
     expectedSha256: "",
     configPath: null,
+    timeoutMs: 5000,
   },
   tier2: {
     enabled: false,

@@ -34,6 +34,8 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.loadPatterns = loadPatterns;
+exports.isAllowlisted = isAllowlisted;
+exports.dedupeDetections = dedupeDetections;
 exports.shutdownPatternWorker = shutdownPatternWorker;
 exports.scan = scan;
 const fs = __importStar(require("fs"));
@@ -105,6 +107,26 @@ function loadPatterns(pluginRoot, tier1Config, allowedRoots) {
 }
 function isAllowlisted(matchedText, allowlist) {
     return allowlist.some((entry) => matchedText.includes(entry));
+}
+/**
+ * Collapses detections that report the identical matched secret value, regardless of
+ * which detector found it (REQ-GL-05). Earlier entries win, so callers that want
+ * tier1's more specific category name to take priority over gitleaks' should
+ * concatenate tier1 detections first.
+ */
+function dedupeDetections(detections) {
+    const seenByValue = new Set();
+    const seenByLocation = new Set();
+    return detections.filter((d) => {
+        if (seenByValue.has(d.matchedText))
+            return false;
+        const locationKey = `${d.category}:${d.index}:${d.length}`;
+        if (seenByLocation.has(locationKey))
+            return false;
+        seenByValue.add(d.matchedText);
+        seenByLocation.add(locationKey);
+        return true;
+    });
 }
 function runTrusted(pattern, text) {
     const detections = [];
@@ -224,14 +246,6 @@ async function scan(text, patterns, options) {
         }
     }
     const filtered = detections.filter((d) => !isAllowlisted(d.matchedText, options.allowlist));
-    // Deduplicate overlapping detections at the same location+category.
-    const seen = new Set();
-    const deduped = filtered.filter((d) => {
-        const key = `${d.category}:${d.index}:${d.length}`;
-        if (seen.has(key))
-            return false;
-        seen.add(key);
-        return true;
-    });
+    const deduped = dedupeDetections(filtered);
     return { detections: deduped, timeouts };
 }

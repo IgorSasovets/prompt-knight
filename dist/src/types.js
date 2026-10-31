@@ -28,6 +28,7 @@ exports.SECURE_DEFAULTS = {
         pinnedVersion: "8.x.y",
         expectedSha256: "",
         configPath: null,
+        timeoutMs: 5000,
     },
     tier2: {
         enabled: false,
