@@ -5,6 +5,14 @@
   "description": "Client-side DLP plugin for Claude Code: catches secrets and PII in prompts before they leave the terminal.",
   "author": "Ihor Sasovets",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IgorSasovets/prompt-knight.git"
+  },
+  "homepage": "https://github.com/IgorSasovets/prompt-knight#readme",
+  "bugs": {
+    "url": "https://github.com/IgorSasovets/prompt-knight/issues"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "pretest": "npm run build",

@@ -1,7 +1,8 @@
 {
   "name": "prompt-knight",
   "owner": {
-    "name": "Ihor Sasovets"
+    "name": "Ihor Sasovets",
+    "url": "https://github.com/IgorSasovets"
   },
   "description": "Marketplace for PromptKnight, a client-side DLP plugin for Claude Code.",
   "plugins": [

@@ -11,13 +11,13 @@ jobs:
     # Platform coverage note (design.md §10/REQ-DIST-04 asks for "macOS Intel and
     # Windows AMD+NVIDIA at minimum"): GitHub-hosted runners don't offer that exact
     # combination. macos-13 is the last Intel macOS image (macos-14+ defaults to
-    # Apple Silicon); windows-latest is AMD64 but CPU-only — GPU runners aren't
+    # Apple Silicon) but as of now, MacOS runs are disabled; windows-latest is AMD64 but CPU-only — GPU runners aren't
     # available on standard GitHub-hosted infrastructure. This is the closest
     # practical coverage, not a claim of full compliance with that platform list.
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-13, windows-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest] # macos-13
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

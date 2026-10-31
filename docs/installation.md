@@ -5,11 +5,11 @@ build step on your machine.
 
 ## From a marketplace (recommended)
 
-Once this repository is pushed to GitHub, register it as a marketplace and install
-the plugin from it:
+Register this repository ([`IgorSasovets/prompt-knight`](https://github.com/IgorSasovets/prompt-knight))
+as a marketplace and install the plugin from it:
 
 ```bash
-claude plugin marketplace add <your-github-owner>/<this-repo>
+claude plugin marketplace add IgorSasovets/prompt-knight
 claude plugin install prompt-knight@prompt-knight
 ```
 
@@ -21,7 +21,7 @@ single-plugin marketplace (`.claude-plugin/marketplace.json`'s one entry has
 Or, from inside an interactive Claude Code session, once the marketplace is added:
 
 ```
-/plugin install prompt-knight --marketplace <your-github-owner>/<this-repo>
+/plugin install prompt-knight --marketplace IgorSasovets/prompt-knight
 ```
 
 ## For local development or trying it without installing

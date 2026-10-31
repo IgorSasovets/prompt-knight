@@ -1,9 +1,11 @@
 {
   "name": "prompt-knight",
   "description": "Client-side DLP: scans every prompt for secrets and PII before it leaves the terminal, via a UserPromptSubmit hook.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "author": {
     "name": "Ihor Sasovets"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "homepage": "https://github.com/IgorSasovets/prompt-knight",
+  "repository": "https://github.com/IgorSasovets/prompt-knight"
 }

@@ -5,6 +5,10 @@
 <h1 align="center">PromptKnight</h1>
 
 <p align="center">
+  <a href="https://github.com/IgorSasovets/prompt-knight/actions/workflows/ci.yml"><img src="https://github.com/IgorSasovets/prompt-knight/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+</p>
+
+<p align="center">
   A client-side DLP plugin for <a href="https://code.claude.com">Claude Code</a> that
   scans every prompt via the <code>UserPromptSubmit</code> hook and catches secrets
   and PII <strong>before they leave the terminal</strong>.
@@ -50,8 +54,8 @@ for *why* things are built the way they are.
 ## Quick start
 
 ```bash
-# Install from this repo as a marketplace (once pushed to GitHub)
-claude plugin marketplace add <your-github-owner>/<this-repo>
+# Install from this repo as a marketplace
+claude plugin marketplace add IgorSasovets/prompt-knight
 claude plugin install prompt-knight@prompt-knight
 
 # Or, for local development, load it without installing:
