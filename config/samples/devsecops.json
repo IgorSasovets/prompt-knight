@@ -1,0 +1,38 @@
+{
+  "mode": "block",
+  "tier1": {
+    "enabled": true,
+    "patterns": {
+      "aws_keys": true,
+      "aws_secrets": true,
+      "aws_accounts": true,
+      "aws_arns": true,
+      "db_strings": true,
+      "jwt_tokens": true,
+      "npm_tokens": true,
+      "private_ips": true
+    },
+    "allowlist": []
+  },
+  "gitleaks": {
+    "enabled": true,
+    "binaryPath": "gitleaks",
+    "pinnedVersion": "REPLACE_WITH_YOUR_INSTALLED_VERSION",
+    "expectedSha256": "REPLACE_WITH_SHA256_OF_YOUR_INSTALLED_BINARY"
+  },
+  "tier2": {
+    "enabled": true,
+    "ollamaUrl": "http://localhost:11434",
+    "allowNonLocal": false,
+    "model": "llama3.2:3b",
+    "confidenceThreshold": 0.7
+  },
+  "logging": {
+    "enabled": true,
+    "previewChars": 4
+  },
+  "feedback": {
+    "enabled": true,
+    "autoExtendPatterns": false
+  }
+}

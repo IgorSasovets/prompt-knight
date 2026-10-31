@@ -1,0 +1,30 @@
+{
+  "mode": "audit",
+  "tier1": {
+    "enabled": true,
+    "patterns": {
+      "aws_keys": true,
+      "aws_secrets": true,
+      "aws_accounts": true,
+      "aws_arns": true,
+      "db_strings": true,
+      "jwt_tokens": true,
+      "npm_tokens": true,
+      "private_ips": true
+    },
+    "allowlist": []
+  },
+  "gitleaks": {
+    "enabled": false
+  },
+  "tier2": {
+    "enabled": false
+  },
+  "logging": {
+    "enabled": true,
+    "previewChars": 4
+  },
+  "feedback": {
+    "enabled": false
+  }
+}

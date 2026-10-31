@@ -70,7 +70,13 @@ export interface VerifyResult {
 export function verifyBinary(config: GitleaksConfig): VerifyResult {
   const resolvedPath = resolveBinaryPath(config.binaryPath);
   if (!resolvedPath) {
-    return { ok: false, reason: `gitleaks binary not found (configured path: "${config.binaryPath}")` };
+    return {
+      ok: false,
+      reason:
+        `gitleaks binary not found (configured path: "${config.binaryPath}"). ` +
+        "Run `node dist/src/gitleaks-installer.js` to download and verify a pinned build automatically, " +
+        "or install gitleaks yourself and configure gitleaks.binaryPath/pinnedVersion/expectedSha256.",
+    };
   }
 
   if (!config.expectedSha256) {

@@ -1,0 +1,14 @@
+{
+  "name": "prompt-knight",
+  "owner": {
+    "name": "Ihor Sasovets"
+  },
+  "description": "Marketplace for PromptKnight, a client-side DLP plugin for Claude Code.",
+  "plugins": [
+    {
+      "name": "prompt-knight",
+      "source": ".",
+      "description": "Client-side DLP: scans every prompt for secrets and PII before it leaves the terminal, via a UserPromptSubmit hook."
+    }
+  ]
+}
