@@ -43,11 +43,15 @@ Two things shape this spec beyond the source brief:
 detection pipeline; enforcement modes; configuration; audit logging; the self-improvement loop;
 plugin packaging and marketplace distribution; the tool's own security hardening.
 
-**Out of scope (documented limitation):** PromptKnight is a client-side defense on the prompt text
-channel only. It does **not** inspect file attachments, MCP tool outputs, or data piped to other
-channels (Decision **D15**, Open Decision **OD2**). For comprehensive DLP, pair it with
-server-side controls and CI secret-scanning (git-secrets, gitleaks, truffleHog) — this is stated in
-the brief and preserved here.
+**Out of scope (documented limitation):** PromptKnight is a client-side defense. Decision **D15**
+("channel scope") originally limited it to the `UserPromptSubmit` prompt-text channel alone;
+**Open Decision OD2 resolved that** by adding a second channel — `Read`/`Grep`/`Bash` tool output,
+via `PreToolUse`/`PostToolUse` hooks (Decisions **D19–D25**, §2, §8). What remains out of scope,
+tracked as **Open Decision OD3**: MCP tool outputs, `WebFetch`, `NotebookEdit` content, and the
+`@file`-mention bypass (no hook fires for those at all — Claude Code's own documented behavior,
+not something a hook can close). For comprehensive DLP, pair PromptKnight with server-side
+controls and CI secret-scanning (git-secrets, gitleaks, truffleHog) — this is stated in the brief
+and preserved here.
 
 ---
 
@@ -102,6 +106,10 @@ is schema-validated and advisory, and can only raise the severity of a decision,
 | Config loader | `src/config-loader.ts` | 3-tier override, path sandboxing, malformed-config fallback |
 | Audit logger | `src/feedback-logger.ts` | JSONL audit log, redaction, secure file permissions |
 | Pattern suggester | `src/review-patterns.ts` | Group Tier 2 findings → propose regex → human review CLI |
+| Tool-input hook entry point | `src/scan-tool-input.ts` | `PreToolUse` on `Read`\|`Grep`: deny-by-path pre-filter (D19, D20) |
+| Tool-output hook entry point | `src/scan-tool-output.ts` | `PostToolUse` on `Read`\|`Grep`\|`Bash`: runs the same tier pipeline per extracted field, redacts via `updatedToolOutput` (D19, D22, D23) |
+| Deny-glob matcher | `src/glob-match.ts` | Hand-rolled, non-exponential-blowup glob matching for `toolOutput.denyPathPatterns` (D21) |
+| Tool-response adapter | `src/tool-output-extract.ts` | Per-tool `tool_response` ↔ scannable-text conversion, exact-shape rebuild (D22) |
 
 ### Platform & runtime
 
@@ -162,6 +170,46 @@ safest, Llama 3.2 (1B) lowest footprint, Phi-4-mini best accuracy if RAM allows,
 multilingual. On Windows with an NVIDIA GPU, Ollama offloads to CUDA automatically (~1–2 s vs ~5 s
 CPU-only). Tier 2 is **opt-in** and **escalate-only** (D9), and its output is strictly
 schema-validated (D9, `REQ-T2-04`).
+
+### Tool-output channel — closes OD2 (Decisions D19–D25)
+
+`UserPromptSubmit` only ever sees what the *user* types. A second pair of hooks extends the same
+two-tier pipeline to what a *tool* reads into context — the gap a real test against a DLP fixture
+project surfaced: a file containing secrets, read via the `Read` tool, reached the model untouched.
+
+- **`PreToolUse`** (matcher `Read|Grep`, `src/scan-tool-input.ts`): a cheap, deterministic
+  pre-filter. If the target path matches a configured deny-glob (`toolOutput.denyPathPatterns` —
+  `.env`, `*.pem`, `.ssh/*`, etc.) **and** the active mode is `block`, the call is denied outright
+  via `permissionDecision:"deny"` before it ever runs (D20). `Bash` is excluded (D25): its
+  `tool_input.command` is a free-form shell string, not a path. Any failure here fails open — this
+  layer is defense-in-depth, never the enforcement boundary (D19).
+- **`PostToolUse`** (matcher `Read|Grep|Bash`, `src/scan-tool-output.ts`): the real fix. Extracts
+  the scannable text per tool (Read's `file.content`; Grep's `content` when `mode:"content"`;
+  Bash's `stdout`/`stderr` as independent fields), runs each through the *same* Tier 1/gitleaks/
+  Tier 2 pipeline `scan-prompt.ts` already uses, and on a block decision, re-emits the tool's exact
+  original `tool_response` shape with only the offending field's content spliced via verified
+  `Detection` offsets (`redactByOffsets`, D23) — never a full regex re-run, never a blind substring
+  replace (Tier 2 detections carry a synthetic `index:0,length:0`, which `redactByOffsets` detects
+  and falls back to a full-field placeholder for, rather than silently leaving them unredacted).
+
+**Why not just `decision:"block"`?** Verified empirically against a real Claude Code session
+(v2.1.316): a top-level `decision:"block"` on `PostToolUse` does **not** stop the original tool
+output from reaching the model — only `hookSpecificOutput.updatedToolOutput`, re-emitted in the
+tool's exact original shape, does that (D22). A shape mismatch is a silent DLP bypass, not a
+crash, which is why `tool-output-extract.ts`'s rebuild only ever overwrites the field it read, and
+why the test suite asserts the secret's literal absence from the emitted JSON, not just the
+decision field.
+
+`toolOutput.enabled` defaults to `true` across `Read`, `Grep`, and `Bash` (D24), matching every
+other secure-by-default choice in this spec — the accepted tradeoff is a scan pass on every
+Read/Grep/Bash call, and a block-mode false positive ending an agentic turn rather than just
+prompting a re-type.
+
+**What this does not cover (Open Decision OD3):** MCP tool outputs, `WebFetch`, `NotebookEdit`
+content, and the `@file`-mention bypass (Claude Code inserts `@`-mentioned file content directly,
+firing no `PreToolUse`/`PostToolUse` hook at all). These are documented, not silently dropped —
+see `docs/security.md`. Claude Code's own mitigation for the mention bypass is
+`CLAUDE_CODE_DISABLE_FILE_MENTIONS=1` (v2.1.299+), which forces those reads through `Read` instead.
 
 ---
 
@@ -244,6 +292,14 @@ Full schema (secure defaults shown):
     "enabled": false,
     "suggestPatterns": true,
     "autoExtendPatterns": false          // human-in-the-loop by default (REQ-SI-03)
+  },
+  "toolOutput": {                        // tool-output channel, closes OD2 (D19–D25)
+    "enabled": true,                     // on by default (D24) — Read/Grep/Bash content scan
+    "tools": ["Read", "Grep", "Bash"],
+    "denyPathPatterns": [                // PreToolUse deny-glob (Read/Grep only, D20/D25)
+      ".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*",
+      "*.p12", "*.pfx", ".aws/credentials", ".ssh/*"
+    ]
   }
 }
 ```
@@ -299,7 +355,9 @@ prompt-knight/
 └── README.md
 ```
 
-`hooks/hooks.json` registers `node ${CLAUDE_PLUGIN_ROOT}/dist/scan-prompt.js` on `UserPromptSubmit`.
+`hooks/hooks.json` registers `dist/src/scan-prompt.js` on `UserPromptSubmit`, `dist/src/scan-tool-input.js`
+on `PreToolUse` (matcher `Read|Grep`), and `dist/src/scan-tool-output.js` on `PostToolUse`
+(matcher `Read|Grep|Bash`) — see "Tool-output channel" in §3.
 
 ---
 
@@ -325,13 +383,21 @@ prompt-knight/
 | D16 | Test runner | Built-in `node:test` against compiled JS | Default | Keeps dev + runtime deps minimal |
 | D17 | Enforcement modes | `block` \| `warn` \| `audit` | Accepted | From brief |
 | D18 | Default Tier 2 model | `llama3.2:3b` | Accepted | Safest choice at 8 GB per brief |
+| D19 | Tool channel scope | New `PreToolUse` (`Read\|Grep`) + `PostToolUse` (`Read\|Grep\|Bash`) hooks, reusing the existing Tier1/gitleaks/Tier2 pipeline unchanged | **Accepted (user)** | Closes OD2's reported gap: tool-read content never reached `scan-prompt.ts` |
+| D20 | PreToolUse deny-glob scope | Denies only when `mode==="block"`; warn/audit defer entirely to the PostToolUse scan | **Accepted (user)** | Avoids a third, independent mode-semantics implementation; the Pre-hook is defense-in-depth, not the enforcement boundary |
+| D21 | Deny-pattern matcher | Hand-rolled two-pointer glob matcher (`src/glob-match.ts`), not a regex translation | **Accepted (user)** | Keeps user-configurable deny patterns out of `checkRedosSafety()`'s review surface entirely — bounded O(pattern·segment), no exponential blowup |
+| D22 | `updatedToolOutput` shape fidelity | Re-emit the tool's exact `tool_response` shape, altering only the extracted field's value | **Accepted (user)** | A shape mismatch silently discards the hook's output and the raw secret reaches the model — verified empirically against a real session, tested positively (secret absence), not inferred from exit code |
+| D23 | Surgical vs. full-field redaction | Splice by verified `Detection.index`/`length` when every detection's offset checks out against the extracted text; otherwise replace the whole field | **Accepted (session)** | Tier 2 detections carry `index:0,length:0` and a synthetic `matchedText` (`tier2-ollama.ts`'s `buildDetections()`) — a plain substring-replace would silently no-op on exactly the detections most needing it |
+| D24 | `toolOutput.enabled` default | `true`, covering `Read`+`Grep`+`Bash`, obeying the global `mode` | **Accepted (user)** | Closes a reported leak at Tier 1's near-zero per-call cost; traded against added latency/false-positive surface on every Read/Grep/Bash call — gitleaks/Tier 2 remain independently opt-in as today |
+| D25 | Bash excluded from the PreToolUse deny-glob | `tool_input.command` is a free-form shell string, not a path | **Accepted (user)** | Parsing a shell command for a path reliably is fragile/out of scope; Bash is still covered by the PostToolUse content scan |
 
 ### Open decisions index (awaiting your steer)
 
 | ID | Open question | Current default | Impact if changed |
 |---|---|---|---|
 | **OD1** | gitleaks vs trufflehog for the supplementary scanner | gitleaks | Swaps the Grade-3 adapter; trufflehog adds network-verification surface we'd then have to constrain |
-| **OD2** | Extend to other channels (file attachments, MCP tool outputs) in a later phase? | Out of scope | Would add `PreToolUse`/attachment-scanning requirements and a new phase |
+| **OD2** | ~~Extend to other channels (file attachments, MCP tool outputs) in a later phase?~~ | **Resolved** — see D19–D25 and §3's "Tool-output channel" | Closed by this phase for `Read`/`Grep`/`Bash` |
+| **OD3** | MCP tool outputs, `WebFetch`, `NotebookEdit` content; the `@file`-mention bypass (no hook fires at all for those) | Deferred / documented-not-fixed (mitigation: `CLAUDE_CODE_DISABLE_FILE_MENTIONS=1`) | Would add more `PostToolUse` matcher entries and/or a documented env-var recommendation in a later phase |
 
 ---
 
@@ -352,6 +418,7 @@ are defined in `requirements.md`; phases/tasks in `tasks.md`.
 | Tier 2 Ollama | REQ-T2-01..07 | T3.1, T3.2, T3.3, T3.4 |
 | Self-improvement | REQ-SI-01..05 | T4.1, T4.2, T4.3, T4.4 |
 | Distribution | REQ-DIST-01..04 | T1.1, T5.1, T5.2, T5.3, T5.4 |
+| Tool channel coverage | REQ-TOOL-01..11 | T6.1, T6.2, T6.3, T6.4, T6.5, T6.6, T6.7, T6.8, T6.9, T6.10 |
 
 ---
 
@@ -367,7 +434,10 @@ are defined in `requirements.md`; phases/tasks in `tasks.md`.
 | Ollama API — `github.com/ollama/ollama` | Local LLM inference (Tier 2) |
 | karanb192/claude-code-hooks | Reference marketplace / plugin structure |
 
-> **Limitation (preserved from the brief).** PromptKnight is a client-side defense layer on the
-> prompt-text channel. It does not prevent sensitive data reaching Claude through other channels
-> (file attachments, MCP tool outputs, piped stdin). For comprehensive DLP, pair it with
-> server-side controls, CI secret-scanning, and organization-wide data-classification policies.
+> **Limitation (updated — narrower than the brief's original statement).** PromptKnight is a
+> client-side defense layer covering the `UserPromptSubmit` prompt-text channel and, as of the
+> tool-output phase (D19–D25), the `Read`/`Grep`/`Bash` tool-output channel. It does **not** yet
+> prevent sensitive data reaching Claude through MCP tool outputs, `WebFetch`, `NotebookEdit`
+> content, or the `@file`-mention bypass (Open Decision **OD3**). For comprehensive DLP, pair it
+> with server-side controls, CI secret-scanning, and organization-wide data-classification
+> policies.

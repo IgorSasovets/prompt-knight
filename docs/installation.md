@@ -56,11 +56,20 @@ claude plugin list
 ```
 
 should show `prompt-knight@prompt-knight` with `Status: ✔ enabled`. To confirm the
-hook actually fires, submit a prompt containing something like `AKIAABCDEFGHIJKLMNOP`
-(a fake AWS-shaped key) — with the default `block` mode, PromptKnight should refuse
-it before it ever reaches Claude. `demo/demo.sh` in this repository reproduces exactly
-that, outside of a live session, if you want to see it without needing a real
-install first.
+prompt-channel hook actually fires, submit a prompt containing something like
+`AKIAABCDEFGHIJKLMNOP` (a fake AWS-shaped key) — with the default `block` mode,
+PromptKnight should refuse it before it ever reaches Claude. `demo/demo.sh` in this
+repository reproduces exactly that, outside of a live session, if you want to see it
+without needing a real install first.
+
+To confirm the tool-output channel (`Read`/`Grep`/`Bash` — see
+[architecture.md](architecture.md#the-tool-output-channel)), create a file
+containing the same fake key and ask Claude to read it; it should come back
+redacted, and the turn should end with a PromptKnight warning. For a fully
+automated, real-session version of this same check, run
+`scripts/verify-tool-output-redaction.sh` from this repository (needs an installed,
+authenticated `claude` binary; it's a manual verification script, not part of
+`npm test`).
 
 ## Uninstalling / disabling
 

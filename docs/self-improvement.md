@@ -6,7 +6,11 @@ over time: every real PII catch Tier 2 makes is a candidate for a new, fast rege
 pattern — reviewed and approved by a human before it ever takes effect.
 
 This is entirely opt-in (`feedback.enabled: false` by default) and has no effect on
-enforcement unless you turn it on.
+enforcement unless you turn it on. It applies equally to both channels: a Tier 2
+catch on a prompt and a Tier 2 catch on `Read`/`Grep`/`Bash` tool output (see
+[architecture.md](architecture.md#the-tool-output-channel)) feed the same
+`feedback.jsonl` and `pattern-stats.json`, and a pattern approved from either source
+protects both.
 
 ## How it works end to end
 

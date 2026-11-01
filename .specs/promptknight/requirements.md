@@ -154,6 +154,38 @@ Each requirement links to the decision(s) and threat-model entries it realizes (
 - **REQ-DIST-04** — The project **shall** provide CI that runs pattern tests, lint, type-check, and
   cross-platform tests (macOS Intel and Windows AMD+NVIDIA at minimum) on each change. *(D16)*
 
+## Tool-output channel (TOOL)
+
+- **REQ-TOOL-01** — *When* Claude Code is about to invoke `Read` or `Grep`, PromptKnight **shall**
+  receive `tool_input` as JSON via the `PreToolUse` hook before the tool runs. *(D19)*
+- **REQ-TOOL-02** — *Where* `toolOutput.enabled` is true and the active mode is `block`, *if* the
+  `Read`/`Grep` target path matches a configured deny-glob pattern, PromptKnight **shall** deny the
+  call via `permissionDecision:"deny"` without executing it. *(D20)*
+- **REQ-TOOL-03** — PromptKnight **shall** match deny-glob patterns with a hand-rolled,
+  non-exponential-blowup matcher, never a regex translation. *(D21)*
+- **REQ-TOOL-04** — *When* `Read`, `Grep`, or `Bash` finishes, PromptKnight **shall** receive
+  `tool_response` as JSON via the `PostToolUse` hook before the result reaches the model. *(D19)*
+- **REQ-TOOL-05** — PromptKnight **shall** extract scannable text per tool: `Read`→`file.content`;
+  `Grep`→`content` only when `mode==="content"`; `Bash`→`stdout` and `stderr` as independent
+  fields.
+- **REQ-TOOL-06** — PromptKnight **shall** run extracted tool-output text through the same
+  Tier 1/gitleaks/Tier 2 pipeline and configuration already used for prompt scanning.
+  *(REQ-T1-\*, REQ-GL-\*, REQ-T2-\*)*
+- **REQ-TOOL-07** — *When* the tool-output decision is `block`, PromptKnight **shall** replace the
+  detected content via `hookSpecificOutput.updatedToolOutput` in the tool's exact original shape;
+  *if* any detection lacks a verified literal offset in the extracted text, PromptKnight **shall**
+  replace the entire extracted field rather than attempt a partial replace. *(D22, D23)*
+- **REQ-TOOL-08** — *When* the tool-output decision is `warn`, PromptKnight **shall** leave
+  `tool_response` unmodified and add a redacted-preview-only summary via
+  `hookSpecificOutput.additionalContext`.
+- **REQ-TOOL-09** — *When* the tool-output decision is `allow`, PromptKnight **shall** exit `0`
+  with no `hookSpecificOutput`.
+- **REQ-TOOL-10** — PromptKnight **shall** log tool-output detections to the same audit log as
+  prompt detections, additionally carrying `channel` and `tool` fields.
+- **REQ-TOOL-11** — The project **shall** document, not attempt to close, the residual gap for
+  `@file` mentions and other tool channels (MCP outputs, `WebFetch`, `NotebookEdit`) left out of
+  this phase. *(OD3)*
+
 ## Secure development — cross-cutting (SEC)
 
 - **REQ-SEC-01** — PromptKnight **shall** treat all prompt content, configuration, pattern files,

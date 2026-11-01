@@ -57,4 +57,24 @@ exports.SECURE_DEFAULTS = {
         // and already capped upstream at 200 chars by tier2-ollama.ts's evidence field.
         evidencePreviewChars: 64,
     },
+    toolOutput: {
+        // On by default (REQ-SEC-08): this closes a real reported leak (Read/Grep/Bash
+        // content reaching the model unscanned) at Tier 1's near-zero per-call cost,
+        // same precedent as tier1.enabled above. gitleaks/tier2 stay independently
+        // opt-in exactly as they already are for the prompt channel (D24).
+        enabled: true,
+        tools: ["Read", "Grep", "Bash"],
+        denyPathPatterns: [
+            ".env",
+            ".env.*",
+            "*.pem",
+            "*.key",
+            "id_rsa*",
+            "id_ed25519*",
+            "*.p12",
+            "*.pfx",
+            ".aws/credentials",
+            ".ssh/*",
+        ],
+    },
 };

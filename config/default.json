@@ -47,5 +47,21 @@
     "autoExtendPatterns": false,
     "minHitsForSuggestion": 3,
     "evidencePreviewChars": 64
+  },
+  "toolOutput": {
+    "enabled": true,
+    "tools": ["Read", "Grep", "Bash"],
+    "denyPathPatterns": [
+      ".env",
+      ".env.*",
+      "*.pem",
+      "*.key",
+      "id_rsa*",
+      "id_ed25519*",
+      "*.p12",
+      "*.pfx",
+      ".aws/credentials",
+      ".ssh/*"
+    ]
   }
 }

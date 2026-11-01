@@ -56,13 +56,19 @@ function appendLines(logPath: string, lines: string[]): LogWriteResult {
   return {};
 }
 
-/** Appends one JSON line per detection to the audit log (REQ-LOG-01/02). */
+export interface DetectionLogTag {
+  channel?: string;
+  tool?: string;
+}
+
+/** Appends one JSON line per detection to the audit log (REQ-LOG-01/02, REQ-TOOL-10). */
 export function logDetections(
   loggingConfig: Config["logging"],
   mode: string,
   detections: Detection[],
   homedir: string,
-  userConfigDir: string
+  userConfigDir: string,
+  tag?: DetectionLogTag
 ): LogWriteResult {
   if (!loggingConfig.enabled || detections.length === 0) return {};
 
@@ -77,6 +83,8 @@ export function logDetections(
       category: d.category,
       location: { index: d.index, length: d.length },
     };
+    if (tag?.channel !== undefined) entry.channel = tag.channel;
+    if (tag?.tool !== undefined) entry.tool = tag.tool;
     if (loggingConfig.redactValues) {
       const preview = redactPreview(d.matchedText, loggingConfig.previewChars);
       if (preview !== undefined) entry.preview = preview;

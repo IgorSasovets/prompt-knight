@@ -41,7 +41,7 @@ Rather than writing a config from scratch, copy one of [`config/samples/`](../co
 | Key | Type | Default | Notes |
 |---|---|---|---|
 | `mode` | `"block" \| "warn" \| "audit"` | `"block"` | See [Enforcement modes](#enforcement-modes) |
-| `maxPromptBytes` | number | `1048576` | Every detector (Tier 1, gitleaks, Tier 2) only ever sees the prompt truncated to this many UTF-8 bytes — a resource bound shared across all three, not just Tier 1 |
+| `maxPromptBytes` | number | `1048576` | Every detector (Tier 1, gitleaks, Tier 2) only ever sees text truncated to this many UTF-8 bytes — a resource bound shared across all three, and across both the prompt channel and each extracted tool-output field, not just Tier 1 on prompts |
 
 ### `tier1` — regex engine
 
@@ -131,14 +131,37 @@ failure never blocks or allows a prompt it otherwise wouldn't have.
 
 See [the self-improvement loop](self-improvement.md) for the full workflow.
 
+### `toolOutput` — the Read/Grep/Bash channel
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `toolOutput.enabled` | boolean | `true` | On by default — see [Enforcement modes](#enforcement-modes) for how `mode` applies to this channel |
+| `toolOutput.tools` | string[] | `["Read", "Grep", "Bash"]` | Which `PostToolUse` tool names get content-scanned. Narrowing this does not affect the `PreToolUse` deny-by-path pre-filter below, which only ever applies to `Read`/`Grep` regardless |
+| `toolOutput.denyPathPatterns` | string[] | `[".env", ".env.*", "*.pem", "*.key", "id_rsa*", "id_ed25519*", "*.p12", "*.pfx", ".aws/credentials", ".ssh/*"]` | Glob patterns (hand-rolled matcher, not regex — see `design.md` D21) checked against `Read`/`Grep`'s target path *before* the read happens, in `block` mode only. A pattern with no `/` matches the basename anywhere; a pattern with `/` matches that many trailing path segments |
+
+This channel closes Open Decision OD2: it scans what a *tool* reads into context —
+`Read`'s file content, `Grep`'s matched lines (only in `output_mode:"content"`), and
+`Bash`'s `stdout`/`stderr` independently — through the exact same Tier 1/gitleaks/
+Tier 2 pipeline described above, reusing every toggle on this page unchanged. It does
+**not** cover MCP tool outputs, `WebFetch`, `NotebookEdit` content, or the
+`@file`-mention bypass — see [security.md](security.md) for that remaining gap
+(Open Decision OD3).
+
 ## Enforcement modes
 
 - **`block`**: exits code `2` — the prompt never reaches Claude. The reason is
-  category plus a redacted preview, never the raw value.
+  category plus a redacted preview, never the raw value. On the `toolOutput`
+  channel, `block` instead redacts the detected content in place via
+  `updatedToolOutput` (or, if a detection can't be safely isolated — any Tier 2
+  catch, since Tier 2 reports a category without a real offset — withholds the whole
+  field) and ends the turn with a warning, since the tool call has already run by
+  the time `PostToolUse` fires.
 - **`warn`**: the prompt proceeds, with a `systemMessage` describing what was
-  flagged.
+  flagged. On the `toolOutput` channel, the content passes through unmodified with
+  an `additionalContext` note instead.
 - **`audit`**: the prompt proceeds silently; detections are only logged, nothing is
-  shown to the user.
+  shown to the user. Same on the `toolOutput` channel — content passes through,
+  detections are logged with `channel:"tool_output"` and a `tool` field.
 
 If a detector crashes unexpectedly (not a planned failure path like gitleaks being
 unverified, but a genuine bug or environment problem), PromptKnight fails **closed**

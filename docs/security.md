@@ -30,6 +30,19 @@ heuristic or a documented assumption rather than a formal guarantee.
 - **Fail-safe on crash**: an unexpected internal error fails *closed* in `block` mode
   and *open with a warning* in `warn`/`audit` mode — a scanner crash never becomes a
   silent bypass.
+- **Tool-output redaction only ever touches the field it read**: the `PostToolUse`
+  hook (`scan-tool-output.ts`) rebuilds a tool's `tool_response` by cloning it and
+  overwriting only the extracted field (e.g. Read's `file.content`), never
+  reconstructing the shape from scratch — verified empirically (not just assumed from
+  the docs) that this is what makes `updatedToolOutput` actually suppress the
+  content, since Claude Code silently discards a shape-mismatched replacement and
+  falls back to the original, unredacted output.
+- **Tool-output redaction never trusts an unverifiable offset**: a detection is only
+  spliced into the surrounding text if `text.slice(index, index+length)` still
+  equals the detection's own matched value; a batch containing even one detection
+  that fails this check (every Tier 2 finding does, by construction — see below)
+  falls back to withholding the whole field rather than risk a partial, silently
+  wrong redaction.
 
 ## What's a heuristic, not a formal proof
 
@@ -59,11 +72,26 @@ no network, a restrictive seccomp profile, etc.) — PromptKnight doesn't provid
 
 ## What's an honest gap, not a hidden one
 
-- **Channel scope**: PromptKnight only ever sees the `UserPromptSubmit` prompt text.
-  It does not inspect file attachments, MCP tool outputs, or any other data channel.
-  Pair it with server-side DLP and CI secret-scanning for comprehensive coverage —
-  this was stated as a limitation in the original design brief and is preserved here
-  rather than quietly dropped.
+- **Channel scope — narrower than before, still not total.** PromptKnight now covers
+  two channels: the `UserPromptSubmit` prompt text, and (since the tool-output
+  phase) `Read`/`Grep`/`Bash` tool output via `PreToolUse`/`PostToolUse` hooks. It
+  still does **not** inspect MCP tool outputs, `WebFetch` fetches, `NotebookEdit`
+  content, or anything referenced with an `@file` mention in a prompt — Claude Code
+  inserts `@`-mentioned content directly, without any tool call, so no hook fires
+  for it at all (not a PromptKnight limitation specifically — no hook *can* see it).
+  If this matters for your threat model, set `CLAUDE_CODE_DISABLE_FILE_MENTIONS=1`
+  (Claude Code v2.1.299+) to force those reads through `Read` instead, where
+  PromptKnight's `PostToolUse` hook does see them. Pair PromptKnight with
+  server-side DLP and CI secret-scanning for comprehensive coverage regardless —
+  this was stated as a limitation in the original design brief and, narrowed to what
+  remains, is preserved here rather than quietly dropped (see `design.md`'s Open
+  Decision OD3).
+- **A tool-output false positive in `block` mode ends the agentic turn, not just a
+  re-prompt.** The prompt channel's `block` mode just means the user re-types; the
+  tool-output channel's `block` mode means a mid-task `Read`/`Grep`/`Bash` call gets
+  its result redacted or withheld and the turn stops. This channel defaults to
+  **on** anyway (every other default in this project is the secure option), but it's
+  a real, accepted tradeoff — see `design.md` decision D24 — not a free lunch.
 - **`gitleaks.expectedSha256` ships empty on purpose.** Hardcoding a real release's
   hash would silently rot — gitleaks publishes many platform/arch binaries and the
   hash changes every release. gitleaks stays off until you supply your own installed

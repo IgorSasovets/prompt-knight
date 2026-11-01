@@ -6,7 +6,8 @@ file in this repo (e.g. `CLAUDE.md`) gives tool-specific instructions, it should
 point back here rather than duplicating any of this.
 
 PromptKnight is a client-side DLP plugin for Claude Code: a `UserPromptSubmit` hook
-that scans prompts for secrets/PII before they reach Claude. See
+that scans prompts for secrets/PII before they reach Claude, plus a `PreToolUse`/
+`PostToolUse` hook pair that scans `Read`/`Grep`/`Bash` tool output the same way. See
 [`README.md`](README.md) for what it does and [`docs/architecture.md`](docs/architecture.md)
 for the module map. The canonical design record — architecture rationale, the STRIDE
 threat model, the decision log, requirement/task traceability — is
@@ -58,12 +59,13 @@ them without raising it explicitly first.
 - **No raw secret value is ever written anywhere** — not a log, not a block/warn
   message, not a thrown error. Route every user-facing or logged value through
   `redactPreview()` (`src/validation.ts`); don't re-implement truncation ad hoc.
-- **The hook (`src/scan-prompt.ts`) cannot make network calls or ask for
-  interactive input.** It has no TTY (stdin is the JSON payload) and REQ-SEC-05
-  scopes "no network" to the core detection path specifically. Anything that needs
-  either of those — provisioning a tool, reviewing suggestions — becomes a
-  separate, explicitly-invoked CLI instead (precedent: `review-patterns.ts`,
-  `gitleaks-installer.ts`), never something bolted onto the hook path.
+- **No hook (`src/scan-prompt.ts`, `src/scan-tool-input.ts`, `src/scan-tool-output.ts`)
+  can make network calls or ask for interactive input.** None has a TTY (stdin is
+  the JSON payload) and REQ-SEC-05 scopes "no network" to the core detection path
+  specifically. Anything that needs either of those — provisioning a tool,
+  reviewing suggestions — becomes a separate, explicitly-invoked CLI instead
+  (precedent: `review-patterns.ts`, `gitleaks-installer.ts`), never something
+  bolted onto a hook path.
 - **A detector's own failure degrades gracefully; it never gets to silently bypass
   enforcement.** Follow the existing split: an unverified/unreachable optional
   detector (gitleaks) skips and logs without affecting the decision; a detector

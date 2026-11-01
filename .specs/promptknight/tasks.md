@@ -178,6 +178,55 @@ pattern.
 
 ---
 
+## Phase 6 — Tool-output channel (closes OD2)
+*(Extends coverage beyond the prompt-text channel per Open Decision OD2. Reuses the existing
+Tier 1/gitleaks/Tier 2 pipeline — no new detection engine.)*
+
+- **T6.1** — Glob matcher (`src/glob-match.ts`).
+  → REQ-TOOL-03 · D21
+
+- **T6.2** — PreToolUse hook (`src/scan-tool-input.ts`): path extraction + mode-gated deny
+  decision, fail-open on its own error.
+  → REQ-TOOL-01, REQ-TOOL-02 · D19, D20, D25
+
+- **T6.3** — Tool-response extraction/rebuild (`src/tool-output-extract.ts`).
+  → REQ-TOOL-05
+
+- **T6.4** — PostToolUse hook pipeline wiring (`src/scan-tool-output.ts`), mirroring
+  `scan-prompt.ts`'s orchestration per extracted field.
+  → REQ-TOOL-04, REQ-TOOL-06
+
+- **T6.5** — Offset-verified redaction (`redactByOffsets` in `src/validation.ts`) + decision→output
+  mapping reusing `decide()` unchanged.
+  → REQ-TOOL-07, REQ-TOOL-08, REQ-TOOL-09 · D22, D23
+
+- **T6.6** — Logging: additive `channel`/`tool` fields on `logDetections()`.
+  → REQ-TOOL-10
+
+- **T6.7** — Config: `ToolOutputConfig` in `types.ts`/`SECURE_DEFAULTS`/`config/default.json`.
+  → D24
+
+- **T6.8** — `hooks/hooks.json` registration for both new hooks.
+  → REQ-TOOL-01, REQ-TOOL-04 · D19
+
+- **T6.9** — Tests: `glob-match.test.ts`, `tool-output-extract.test.ts`, `validation.test.ts`
+  (`redactByOffsets`, including the Tier 2-synthetic-detection case), `scan-tool-input.e2e.test.ts`,
+  `scan-tool-output.e2e.test.ts`.
+  → REQ-TOOL-01..10
+
+- **T6.10** — Docs/spec: `design.md` §1/§2/§3/§5/§7/§8/§9/§10, `requirements.md`, `tasks.md` (this
+  phase), `docs/architecture.md`, `docs/configuration.md` (`### toolOutput`), `docs/security.md`
+  (narrow the honest-gap section, add OD3 + `CLAUDE_CODE_DISABLE_FILE_MENTIONS=1` mention),
+  `CHANGELOG.md` under `[Unreleased]`.
+  → REQ-TOOL-11 · OD3
+
+**Phase 6 exit:** `Read`/`Grep`/`Bash` content that reaches the model is scanned by the same
+pipeline prompts already are, with a provably bounded pre-filter denylist as a fast path — closing
+the originally reported bug — while MCP tool outputs, `WebFetch`, `NotebookEdit`, and `@file`
+mentions remain an explicitly documented, not silently dropped, limitation (OD3).
+
+---
+
 ## Coverage check
 
 Every requirement in `requirements.md` is referenced by at least one task above, and every task

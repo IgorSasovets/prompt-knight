@@ -31,6 +31,41 @@ Every prompt goes through Tier 1 first. gitleaks and Tier 2 — each independent
 opt-in — run in addition to Tier 1, not instead of it; their findings merge with
 Tier 1's before a single enforcement decision is made for the whole prompt.
 
+## The tool-output channel
+
+`UserPromptSubmit` only sees what the user types. A second pair of hooks extends the
+same pipeline to what `Read`, `Grep`, and `Bash` read *into* context — closing the gap
+where a secret-bearing file, read by a tool rather than pasted by the user, reached
+the model untouched.
+
+```
+PreToolUse hook (dist/src/scan-tool-input.js) — matcher: Read|Grep
+  └─ deny-by-path pre-filter (src/glob-match.ts), block mode only, fail-open on error
+
+PostToolUse hook (dist/src/scan-tool-output.js) — matcher: Read|Grep|Bash
+  │
+  ├─ extract scannable field(s) per tool (src/tool-output-extract.ts)
+  │    Read: file.content · Grep: content (mode:"content" only) · Bash: stdout, stderr
+  │
+  ├─ run each field through the SAME Tier 1 → gitleaks → Tier 2 pipeline above
+  ├─ decide per field (src/enforcement.ts, unchanged) → highest-precedence wins
+  │    (block > warn > allow across fields, same escalate-never-downgrade spirit as D9)
+  │
+  ├─ block: redact via verified offsets (src/validation.ts: redactByOffsets) and
+  │    re-emit the tool's EXACT original response shape as `updatedToolOutput`
+  ├─ warn: leave the response untouched, add `additionalContext`
+  └─ allow: exit 0, no output
+```
+
+The `PreToolUse` layer is pure defense-in-depth — it can only deny a read outright by
+path pattern (`.env`, `*.pem`, `.ssh/*`, …), and only in block mode. The real
+enforcement boundary is `PostToolUse`: a top-level `decision:"block"` alone does
+**not** stop the original tool output from reaching the model (verified against a
+real session) — only `updatedToolOutput`, shaped exactly like the tool's own
+response, does. See `design.md` §3 ("Tool-output channel") and decisions D19–D25 for
+the full rationale, including why `Bash` is excluded from the deny-by-path layer and
+why Tier 2 detections need offset verification before they can be redacted at all.
+
 ## Module map
 
 | Module | Responsibility |
@@ -47,7 +82,11 @@ Tier 1's before a single enforcement decision is made for the whole prompt.
 | `src/pattern-stats.ts` | Per-pattern match/suppression counters, persisted across invocations |
 | `src/pattern-suggester.ts` | Shape-signature grouping + regex generalization for the self-improvement loop |
 | `src/review-patterns.ts` | Human-review CLI (`node dist/src/review-patterns.js`) |
-| `src/validation.ts` | Shared redaction/sanitization helpers used everywhere user-facing output is produced |
+| `src/validation.ts` | Shared redaction/sanitization helpers used everywhere user-facing output is produced, including offset-verified tool-output redaction (`redactByOffsets`) |
+| `src/scan-tool-input.ts` | `PreToolUse` hook entry point: deny-by-path pre-filter for `Read`/`Grep` |
+| `src/scan-tool-output.ts` | `PostToolUse` hook entry point: runs the tier pipeline per extracted field, redacts via `updatedToolOutput` |
+| `src/glob-match.ts` | Hand-rolled glob matcher for `toolOutput.denyPathPatterns` — not a regex, so it never needs a ReDoS review |
+| `src/tool-output-extract.ts` | Per-tool `tool_response` ↔ scannable-text conversion and exact-shape rebuild |
 
 ## Why each tier exists
 

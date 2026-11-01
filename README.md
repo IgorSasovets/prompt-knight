@@ -10,20 +10,21 @@
 
 <p align="center">
   A client-side DLP plugin for <a href="https://code.claude.com">Claude Code</a> that
-  scans every prompt via the <code>UserPromptSubmit</code> hook and catches secrets
-  and PII <strong>before they leave the terminal</strong>.
+  scans every prompt, plus everything <code>Read</code>, <code>Grep</code>, and
+  <code>Bash</code> pull into context, and catches secrets and PII
+  <strong>before they reach the model</strong>.
 </p>
 
 A fast regex tier, an optional local-LLM tier for what regex can't catch, and a
 feedback loop that turns real catches into new regex patterns over time.
 
-Everything runs on your machine. No prompt content is sent anywhere as part of the
-scan unless you explicitly enable and configure Tier 2 against a local Ollama
-instance.
+Everything runs on your machine. No prompt or tool-output content is sent anywhere
+as part of the scan unless you explicitly enable and configure Tier 2 against a
+local Ollama instance.
 
 ## Status
 
-All five phases of the build plan are implemented:
+All six phases of the build plan are implemented:
 
 | Phase | What it adds |
 |---|---|
@@ -32,6 +33,7 @@ All five phases of the build plan are implemented:
 | 3 — Tier 2 | Optional semantic PII detection via a local Ollama instance, escalate-only |
 | 4 — Self-improvement | Tier 2 catches feed a human-reviewed CLI that proposes new Tier 1 patterns |
 | 5 — Packaging | README, marketplace manifest, CI, sample configs, demo script, docs |
+| 6 — Tool-output channel | Extends the same pipeline to `Read`/`Grep`/`Bash` content, via `PreToolUse`/`PostToolUse` hooks, redacting in place before it reaches the model |
 
 ## Documentation
 
@@ -39,8 +41,8 @@ All five phases of the build plan are implemented:
   `--plugin-dir` for local dev, verifying it's working
 - **[docs/configuration.md](docs/configuration.md)** — the full config schema,
   precedence rules, enforcement-mode semantics
-- **[docs/architecture.md](docs/architecture.md)** — the detection pipeline and
-  module map
+- **[docs/architecture.md](docs/architecture.md)** — the detection pipeline (both
+  the prompt channel and the tool-output channel) and module map
 - **[docs/self-improvement.md](docs/self-improvement.md)** — the Tier 2 →
   human-reviewed-pattern feedback loop, end to end
 - **[docs/security.md](docs/security.md)** — what's hardened, what's a heuristic,
@@ -83,8 +85,15 @@ prompt → Tier 1 (regex + optional gitleaks) → match? → block/warn/audit
          Tier 2 (optional, Ollama) → PII found above confidence threshold? → escalate
 ```
 
-See [docs/architecture.md](docs/architecture.md) for the full pipeline and module
-map.
+The same pipeline also runs on what a *tool* reads into context, not just what the
+user types: a `PreToolUse` hook denies an obviously sensitive path outright
+(`.env`, `*.pem`, `.ssh/*`, …), and a `PostToolUse` hook scans `Read`/`Grep`/`Bash`
+output and, on a block decision, redacts it in place before it reaches the model —
+so a secret sitting in a file Claude reads is caught the same way a secret pasted
+into a prompt is.
+
+See [docs/architecture.md](docs/architecture.md) for the full pipeline (both
+channels) and module map.
 
 ## Development
 

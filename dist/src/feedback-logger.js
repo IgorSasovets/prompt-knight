@@ -78,8 +78,8 @@ function appendLines(logPath, lines) {
     }
     return {};
 }
-/** Appends one JSON line per detection to the audit log (REQ-LOG-01/02). */
-function logDetections(loggingConfig, mode, detections, homedir, userConfigDir) {
+/** Appends one JSON line per detection to the audit log (REQ-LOG-01/02, REQ-TOOL-10). */
+function logDetections(loggingConfig, mode, detections, homedir, userConfigDir, tag) {
     if (!loggingConfig.enabled || detections.length === 0)
         return {};
     const sandboxErrors = [];
@@ -92,6 +92,10 @@ function logDetections(loggingConfig, mode, detections, homedir, userConfigDir) 
             category: d.category,
             location: { index: d.index, length: d.length },
         };
+        if (tag?.channel !== undefined)
+            entry.channel = tag.channel;
+        if (tag?.tool !== undefined)
+            entry.tool = tag.tool;
         if (loggingConfig.redactValues) {
             const preview = (0, validation_1.redactPreview)(d.matchedText, loggingConfig.previewChars);
             if (preview !== undefined)
